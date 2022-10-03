@@ -6,11 +6,14 @@ from time import sleep
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-
 count = 0
 
 BASE_URL = 'https://www.ozon.ru/product/'
 END_URL = '?oos_search=false'
+
+lst = os.listdir('src/cards') # your directory path
+NUM_FILES = len(lst)
+
 
 options = webdriver.ChromeOptions()
 options.add_argument('--disable-blink-features=AutomationControlled')
@@ -21,13 +24,14 @@ options.add_argument('--disable-extensions')
 class DataModel:
 
     out_of_stock = False
+    header = {}
 
     def __init__(
             self, full_url="", 
             product_name="", description="", 
             product_price="", rating="", 
-            shop_name="", brand_name="", 
-            num_of_reviews="", characteristics=""
+            shop_name="", num_of_reviews="",
+            characteristics="", old_price="", product_id=""
         ):
         self.url = full_url
         self.name = product_name
@@ -35,23 +39,38 @@ class DataModel:
         self.price = product_price
         self.rating = rating
         self.shop = shop_name
-        self.brand = brand_name
         self.numrev = num_of_reviews
         self.chars = characteristics
+        self.oldprice = old_price
+        self.id = product_id
 
     def __str__(self):
         return f'Name: {self.name}\nPrice: {self.price}\nRating: \
         {self.rating}\nNumber of reviews: {self.numrev}\nDescription: \
         {self.desc}\nCharacteristics: {self.chars}\nShop: {self.shop} \
         \n\nOut of stock: {self.out_of_stock}'
+    
+    def make_dict(self):
+        self.header['Название товара'] = self.name
+        self.header['Описание товара'] = self.desc
+        self.header['Цена в рублях'] = self.price
+        self.header['Цена без скидки'] = self.oldprice
+        self.header['Оценка покупателей'] = self.rating
+        self.header['Название магазина'] = self.shop
+        self.header['Количество отзывов'] = self.numrev
+
+        self.header = self.header | self.chars
+        self.header['Адрес товара'] = self.url
 
     def put_in_csv(self):
-        pass
+        self.make_dict()
+        with open(f'src/cards/{self.id}.tsv', 'w') as file:
+            writer = csv.writer(file, delimiter='\t')
+            writer.writerows(self.header.items())
 
 
-def parse(chrome, product_url):
-    model = DataModel()
-
+def parse(chrome, product_url, iden):
+    model = DataModel(full_url=product_url, product_id=iden)
     if WebDriverWait(chrome, 1).until(
             EC.presence_of_element_located(
                 (
@@ -61,8 +80,6 @@ def parse(chrome, product_url):
             )).text.replace(" ", "") == "Этоттоварзакончился":
             model.out_of_stock = True
     try:
-        model.url = product_url
-
         model.name = WebDriverWait(chrome, 1).until(
             EC.presence_of_element_located(
                 (
@@ -71,14 +88,26 @@ def parse(chrome, product_url):
                 )
             )).text
         
-        model.price = WebDriverWait(chrome, 1).until(
+        model.price = "".join(WebDriverWait(chrome, 1).until(
             EC.presence_of_element_located(
                 (
                     By.XPATH,
                     '/html/body/div[1]/div/div[1]/div[3]/div[3] \
                     /div[2]/div[2]/div/div/div/div[1]/div/div/div/div/span/span'
                 )
-            )).text
+            )).text.split()[:-1])
+        
+        try:
+            model.oldprice = WebDriverWait(chrome, 1).until(
+                EC.presence_of_element_located(
+                    (
+                        By.XPATH,
+                        '/html/body/div[1]/div/div[1]/div[3]/div[3]/ \
+                        div[2]/div[2]/div/div/div/div[1]/div/div/div/div/span[2]'
+                    )
+                )).text
+        except:
+            model.oldprice = "-"
         try:
             model.rating = WebDriverWait(chrome, 1).until(
                 EC.presence_of_element_located(
@@ -91,7 +120,7 @@ def parse(chrome, product_url):
         except:
             model.rating = "No rating"
         try: 
-            model.shop = WebDriverWait(chrome, 3).until(
+            model.shop = WebDriverWait(chrome, 2).until(
                 EC.presence_of_element_located(
                     (
                         By.XPATH,
@@ -100,7 +129,7 @@ def parse(chrome, product_url):
                     )
                 )).text
         except:
-            model.shop = WebDriverWait(chrome, 3).until(
+            model.shop = WebDriverWait(chrome, 2).until(
                 EC.presence_of_element_located(
                     (
                         By.XPATH,
@@ -110,28 +139,29 @@ def parse(chrome, product_url):
                 )).text
         
         try: 
-            model.desc = WebDriverWait(chrome,3).until(
+            model.desc = " ".join(WebDriverWait(chrome,2).until(
             EC.presence_of_element_located(
                 (
                     By.XPATH,
                     '//*[@id="section-description"]'
                 )
-            )).text
+            )).text.split("\n")[1:])
         except:
             model.desc = "No description"
         
         try: 
-            model.chars = WebDriverWait(chrome, 3).until(
+            temp_chars = WebDriverWait(chrome, 2).until(
             EC.presence_of_element_located(
                 (
                     By.XPATH,
                     '//*[@id="section-characteristics"]'
                 )
-            )).text
+            )).text.split("\n")[1:-25]
+            model.chars = dict(zip(temp_chars[0::2], temp_chars[1::2]))
         except:
-            model.char = "No characteristics"
+            model.char = {'Характеристика': "-"}
         
-        model.numrev = WebDriverWait(chrome, 3).until(
+        model.numrev = WebDriverWait(chrome, 2).until(
             EC.presence_of_element_located(
                 (
                     By.XPATH,
@@ -140,9 +170,8 @@ def parse(chrome, product_url):
             )).text
 
     except Exception as e:
-        print(model)
         return 1
-    print(model)
+    model.put_in_csv()
     return 0
 
 def excel_to_csv(file):
@@ -156,7 +185,7 @@ def open_window(row):
     driver.maximize_window()
     product_url = BASE_URL + row['ID'] + END_URL
     driver.get(product_url)
-    if parse(driver, product_url):
+    if parse(driver, product_url, row['ID']):
         open_window(row)
     driver.close()
 
@@ -169,9 +198,9 @@ def main():
         reader = csv.DictReader(csv_file)
 
         for row in reader:
+            if count >= NUM_FILES:
+                open_window(row)
             count += 1
-            open_window(row)
-            sleep(15)
             print(count)
 
     print(count)
