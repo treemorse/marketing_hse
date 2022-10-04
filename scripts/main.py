@@ -2,7 +2,6 @@ import os
 from selenium import webdriver
 import pandas as pd
 import csv
-from time import sleep
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -11,7 +10,7 @@ count = 0
 BASE_URL = 'https://www.ozon.ru/product/'
 END_URL = '?oos_search=false'
 
-lst = os.listdir('src/cards') # your directory path
+lst = os.listdir('src/cards')
 NUM_FILES = len(lst)
 
 
@@ -23,6 +22,7 @@ options.add_argument('--disable-extensions')
 
 class DataModel:
 
+    status = ""
     out_of_stock = False
     header = {}
 
@@ -31,7 +31,7 @@ class DataModel:
             product_name="", description="", 
             product_price="", rating="", 
             shop_name="", num_of_reviews="",
-            characteristics="", old_price="", product_id=""
+            characteristics={}, old_price="", product_id=""
         ):
         self.url = full_url
         self.name = product_name
@@ -67,47 +67,100 @@ class DataModel:
         with open(f'src/cards/{self.id}.tsv', 'w') as file:
             writer = csv.writer(file, delimiter='\t')
             writer.writerows(self.header.items())
+            writer.writerow(['Статус ', self.status])
+            
 
 
 def parse(chrome, product_url, iden):
     model = DataModel(full_url=product_url, product_id=iden)
-    if WebDriverWait(chrome, 1).until(
-            EC.presence_of_element_located(
-                (
-                    By.XPATH,
-                    '/html/body/div[1]/div/div[1]/div[3]/div[1]/div/div[3]/h2'
-                )
-            )).text.replace(" ", "") == "Этоттоварзакончился":
-            model.out_of_stock = True
     try:
-        model.name = WebDriverWait(chrome, 1).until(
+        temp_status = WebDriverWait(chrome, 1).until(
             EC.presence_of_element_located(
                 (
                     By.XPATH,
-                    '//*[@id="layoutPage"]/div[1]/div[3]/div[2]/div/div/div[1]/div/h1'
+                    '/html/body/div[1]/div/div[1]/div[2]/div[1]/h2'
                 )
-            )).text
+            )).text.replace(" ", "")
+        model.status = "Отсутствует"
+        model.put_in_csv()
+        return 0
+    except:
+        try:
+            temp_status = WebDriverWait(chrome, 1).until(
+                EC.presence_of_element_located(
+                    (
+                        By.XPATH,
+                        '/html/body/div[1]/div/div[1]/div[3]/div[1]/div/div[3]/h2'
+                    )
+                )).text.replace(" ", "")
+            if temp_status == "Этоттоварзакончился":
+                model.out_of_stock = True
+                model.status = "Закончился"
+            elif temp_status == "Товарнедоставляетсяввашрегион":
+                model.status = "Не доставляется"
+        except:
+            model.status = "В наличии"
+    try:
+        try: 
+            model.name = WebDriverWait(chrome, 1).until(
+                EC.presence_of_element_located(
+                    (
+                        By.XPATH,
+                        '//*[@id="layoutPage"]/div[1]/div[3]/div[2]/div/div/div[1]/div/h1'
+                    )
+                )).text
+        except:
+            model.name = WebDriverWait(chrome, 1).until(
+                EC.presence_of_element_located(
+                    (
+                        By.XPATH,
+                        '/html/body/div[1]/div/div[1]/div[3]/div[3]/div[3]/div/div[3]/h1'
+                    )
+                )).text
         
-        model.price = "".join(WebDriverWait(chrome, 1).until(
-            EC.presence_of_element_located(
-                (
-                    By.XPATH,
-                    '/html/body/div[1]/div/div[1]/div[3]/div[3] \
-                    /div[2]/div[2]/div/div/div/div[1]/div/div/div/div/span/span'
-                )
-            )).text.split()[:-1])
+        try: 
+            model.price = "".join(WebDriverWait(chrome, 1).until(
+                EC.presence_of_element_located(
+                    (
+                        By.XPATH,
+                        '/html/body/div[1]/div/div[1]/div[3]/div[3] \
+                        /div[2]/div[2]/div/div/div/div[1]/div/div/div/div/span/span'
+                    )
+                )).text.split()[:-1])
+        except:
+            try:
+                model.price = "".join(WebDriverWait(chrome, 1).until(
+                    EC.presence_of_element_located(
+                        (
+                            By.XPATH,
+                            '/html/body/div[1]/div/div[1]/div[3]/div[3] \
+                            /div[3]/div/div[10]/div/div/div[1]/div/div/div[1]/div/span[1]/span'
+                        )
+                    )).text.split()[:-1])
+            except:
+                model.price = "-"
         
         try:
-            model.oldprice = WebDriverWait(chrome, 1).until(
+            model.oldprice = "".join(WebDriverWait(chrome, 1).until(
                 EC.presence_of_element_located(
                     (
                         By.XPATH,
                         '/html/body/div[1]/div/div[1]/div[3]/div[3]/ \
                         div[2]/div[2]/div/div/div/div[1]/div/div/div/div/span[2]'
                     )
-                )).text
+                )).text.split()[:-1])
         except:
-            model.oldprice = "-"
+            try:
+                model.oldprice = "".join(WebDriverWait(chrome, 1).until(
+                    EC.presence_of_element_located(
+                        (
+                            By.XPATH,
+                            '/html/body/div[1]/div/div[1]/div[3]/div[3]/ \
+                            div[3]/div/div[10]/div/div/div[1]/div/div/div[1]/div/span[2]'
+                        )
+                    )).text.split()[:-1])
+            except:
+                model.oldprice = "-"
         try:
             model.rating = WebDriverWait(chrome, 1).until(
                 EC.presence_of_element_located(
@@ -118,9 +171,19 @@ def parse(chrome, product_url, iden):
                     )
                 )).get_attribute("style").split()[1].replace(';', '')
         except:
-            model.rating = "No rating"
+            try:
+                model.rating = WebDriverWait(chrome, 1).until(
+                    EC.presence_of_element_located(
+                        (
+                            By.XPATH,
+                            '/html/body/div[1]/div/div[1]/div[3]/div[3]/ \
+                            div[3]/div/div[5]/div[1]/div/div/div[1]/div/div[2]'
+                        )
+                    )).get_attribute("style").split()[1].replace(';', '')
+            except:
+                model.rating = "No rating"
         try: 
-            model.shop = WebDriverWait(chrome, 2).until(
+            model.shop = WebDriverWait(chrome, 1).until(
                 EC.presence_of_element_located(
                     (
                         By.XPATH,
@@ -129,17 +192,27 @@ def parse(chrome, product_url, iden):
                     )
                 )).text
         except:
-            model.shop = WebDriverWait(chrome, 2).until(
-                EC.presence_of_element_located(
-                    (
-                        By.XPATH,
-                        '/html/body/div[1]/div/div[1]/div[5]/div/div[1]/ \
-                        div[2]/div/div[1]/div/div[1]/div[1]/div/div/div[1]/div[2]/a'
-                    )
-                )).text
+            try: 
+                model.shop = WebDriverWait(chrome, 1).until(
+                    EC.presence_of_element_located(
+                        (
+                            By.XPATH,
+                            '/html/body/div[1]/div/div[1]/div[3]/div[3]/div[3] \
+                            /div/div[24]/div/div[1]/div[1]/div/div[2]/div[1]/div/a'
+                        )
+                    )).text
+            except:
+                model.shop = WebDriverWait(chrome, 1).until(
+                    EC.presence_of_element_located(
+                        (
+                            By.XPATH,
+                            '/html/body/div[1]/div/div[1]/div[5]/div/div[1]/ \
+                            div[2]/div/div[1]/div/div[1]/div[1]/div/div/div[1]/div[2]/a'
+                        )
+                    )).text
         
         try: 
-            model.desc = " ".join(WebDriverWait(chrome,2).until(
+            model.desc = " ".join(WebDriverWait(chrome,1).until(
             EC.presence_of_element_located(
                 (
                     By.XPATH,
@@ -150,7 +223,7 @@ def parse(chrome, product_url, iden):
             model.desc = "No description"
         
         try: 
-            temp_chars = WebDriverWait(chrome, 2).until(
+            temp_chars = WebDriverWait(chrome, 1).until(
             EC.presence_of_element_located(
                 (
                     By.XPATH,
@@ -160,16 +233,27 @@ def parse(chrome, product_url, iden):
             model.chars = dict(zip(temp_chars[0::2], temp_chars[1::2]))
         except:
             model.char = {'Характеристика': "-"}
-        
-        model.numrev = WebDriverWait(chrome, 2).until(
-            EC.presence_of_element_located(
-                (
-                    By.XPATH,
-                    '/html/body/div[1]/div/div[1]/div[5]/div/div[1]/div[3]/div[3]/div/div[2]/div/div'
-                )
-            )).text
+        try:
+            model.numrev = WebDriverWait(chrome, 1).until(
+                EC.presence_of_element_located(
+                    (
+                        By.XPATH,
+                        '/html/body/div[1]/div/div[1]/div[5]/ \
+                        div/div[1]/div[3]/div[3]/div/div[2]/div/div'
+                    )
+                )).text
+        except:
+            model.numrev = WebDriverWait(chrome, 1).until(
+                EC.presence_of_element_located(
+                    (
+                        By.XPATH,
+                        '/html/body/div[1]/div/div[1]/div[4]/ \
+                        div/div[4]/div/div[2]/div/div[2]/div/div'
+                    )
+                )).text
 
     except Exception as e:
+        print(model)
         return 1
     model.put_in_csv()
     return 0
