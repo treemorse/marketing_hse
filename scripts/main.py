@@ -1,4 +1,5 @@
 import os
+from time import sleep
 from selenium import webdriver
 import pandas as pd
 import csv
@@ -224,13 +225,14 @@ def parse(chrome, product_url, iden):
         
         try: 
             temp_chars = WebDriverWait(chrome, 1).until(
-            EC.presence_of_element_located(
+            EC.presence_of_element_located( 
                 (
-                    By.XPATH,
-                    '//*[@id="section-characteristics"]'
+                    By.ID,
+                    'section-characteristics'
                 )
             )).text.split("\n")[1:-25]
             model.chars = dict(zip(temp_chars[0::2], temp_chars[1::2]))
+            print(model.chars)
         except:
             model.char = {'Характеристика': "-"}
         try:
