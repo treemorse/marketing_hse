@@ -5,6 +5,7 @@ import csv
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+
 count = 0
 
 BASE_URL = 'https://www.ozon.ru/product/'
